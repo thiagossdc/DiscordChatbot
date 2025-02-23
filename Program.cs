@@ -1,15 +1,15 @@
-﻿using System;
-using System.Threading.Tasks;
-using Discord;
+﻿using Discord;
 using Discord.Commands;
 using Discord.WebSocket;
+using DiscordChatbot;
 using Microsoft.Extensions.DependencyInjection;
 
 class Program
 {
     private readonly DiscordSocketClient _client;
+    private readonly CommandService _commands;
     private readonly IServiceProvider _services;
-    private const string Token = "seu_token_aqui";
+    private static readonly string Token = Environment.GetEnvironmentVariable("DISCORD_BOT_TOKEN");
 
     static async Task Main()
     {
@@ -25,16 +25,17 @@ class Program
             MessageCacheSize = 100
         });
 
+        _commands = new CommandService();
+
         _services = ConfigureServices();
     }
 
     private IServiceProvider ConfigureServices()
     {
-        var services = new ServiceCollection();
-
-        services.AddSingleton(_client);
-
-        services.AddSingleton<CommandService>();
+        IServiceCollection services = new ServiceCollection()
+            .AddSingleton(_client)
+            .AddSingleton(_commands)
+            .AddSingleton<CommandHandler>();
 
         return services.BuildServiceProvider();
     }
@@ -42,10 +43,12 @@ class Program
     public async Task RunBotAsync()
     {
         _client.Log += Log;
-        _client.MessageReceived += async (msg) => await HandleMessageAsync(msg);
 
         await _client.LoginAsync(TokenType.Bot, Token);
         await _client.StartAsync();
+
+        var commandHandler = _services.GetRequiredService<CommandHandler>();
+        await commandHandler.InitializeAsync();
 
         Console.WriteLine("Bot iniciado com sucesso!");
         await Task.Delay(-1);
@@ -55,38 +58,5 @@ class Program
     {
         Console.WriteLine(msg);
         return Task.CompletedTask;
-    }
-
-    private async Task HandleMessageAsync(SocketMessage msg)
-    {
-        var message = msg as SocketUserMessage;
-        if (message == null || message.Author.IsBot) return;
-
-        int argPos = 0;
-        if (message.HasCharPrefix('!', ref argPos))
-        {
-            string command = message.Content.Substring(argPos).ToLower();
-            await ExecuteCommandAsync(command, message);
-        }
-    }
-
-    private async Task ExecuteCommandAsync(string command, SocketUserMessage message)
-    {
-        switch (command)
-        {
-            case "ping":
-                await message.Channel.SendMessageAsync("Pong!");
-                break;
-            case "hello":
-                await message.Channel.SendMessageAsync($"Olá, {message.Author.Username}!");
-                break;
-            case "info":
-                var user = message.Author;
-                await message.Channel.SendMessageAsync($"Usuário: {user.Username}#{user.Discriminator}\nID: {user.Id}\nCriado em: {user.CreatedAt}");
-                break;
-            default:
-                await message.Channel.SendMessageAsync("Comando não reconhecido. Tente !ping, !hello ou !info.");
-                break;
-        }
     }
 }
